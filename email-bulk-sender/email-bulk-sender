@@ -1,0 +1,220 @@
+#!/usr/bin/env bash
+#
+# SPDX-License-Identifier: AGPL-3.0
+
+_bin="$( \
+  dirname \
+    "$( \
+      command \
+        -v \
+	  "env")")"
+_lib="${_bin}/../lib"
+_share="${_bin}/../share"
+source \
+  "${_lib}/libcrash-bash/crash-bash"
+
+_root_requirements() {
+  _check_cmd \
+    "display-ppa" \
+    "android-display-utils"
+}
+
+# shellcheck disable=SC2034
+_global_variables() {
+  get_date=""
+  user_email=""
+  user_password=""
+  email_subject=""
+  email_body=""
+  email_recipients=()
+  color=""
+  quiet=""
+}
+
+_credentials_requirements() {
+  if [[ "${_email}" == "" ]]; then
+    _msg_error \
+      "a sender email must be provided with -e" \
+      1
+  elif [[ "${_password}" == "" ]]; then
+    _msg_error \
+      "an email password must be provided with -k" \
+      1
+  fi
+  if [[ "${_email}" != *"@"* ]]; then
+    _msg_error \
+      "malformed email" \
+      1
+  fi
+}
+
+_email_bulk_sender() {
+  local \
+    _email="${1}" \
+    _password="${2}" \
+    _subject="${3}" \
+    _body="${4}" \
+    _recipients_per_email="${5}" \
+    _recipients=()
+  shift \
+    4
+  _recipients=(
+    "$@"
+  )
+  _credentials_requirements
+}
+
+_set_overrides() {
+  _set_override \
+    "get" \
+    "date" \
+    "$(_get_date_human)"
+  _set_override \
+    "user" \
+    "email" \
+    ""
+  _set_override \
+    "user" \
+    "password" \
+    ""
+  _set_override \
+    "email" \
+    "subject" \
+    ""
+  _set_override \
+    "email" \
+    "body" \
+    ""
+  _set_override \
+    "recipients" \
+    "per_email" \
+    "1"
+  if [[ -v override_color ]]; then
+    color="${override_color}"
+  elif [[ -z "${color}" ]]; then
+    color="n"
+  fi
+  if [[ -v override_quiet ]]; then
+    quiet="${override_quiet}"
+  elif [[ -z "${quiet}" ]]; then
+    quiet="y"
+  fi
+}
+
+# Shows configuration options.
+_show_config() {
+  _msg_info "${app_name} configuration"
+  _msg_info "        Bulk send at date:   $(_get "send" "date")"
+  _msg_info "               User email:   $(_get "user" "email")"
+  _msg_info "            User password:   $(_get "user" "password")"
+  _msg_info "            Email subject:   $(_get "email" "subject")"
+  _msg_info "               Email body:   $(_get "email" "body")"
+  _msg_info "     Recipients per email:   $(_get "recipients" "per_email")"
+  _msg_info "               Recipients:   "
+  _display_flags                          "${_recipients[*]}"
+}
+
+# Show help usage, with an exit status.
+# $1: exit status number.
+_usage() {
+  local \
+    _usage_text
+  IFS='' \
+    read \
+      -r \
+      -d '' \
+      _usage_text << \
+        ENDUSAGETEXT || true
+
+Bulk send emails.
+
+Usage:
+  $(_get "app" "name")
+    [options]
+    [recipients]
+  options:
+     -e <email>                User email.
+                               Default: $(_get "user" "email")
+     -k <password>             User password
+                               Default: $(_get "user" "password")
+     -s <subject>              Email subject
+                               Default: $(_get "email" "subject")
+     -b <body>                 Email body
+                               Default: $(_get "email" "body")
+     -n <recipients_per_email> Recipients per email
+                               Default: $(_get "recipients" "per_email")
+     -h                        This message.
+     -v                        Enable verbose output
+ENDUSAGETEXT
+  _printf \
+    '%s\n' \
+    "${_usage_text}"
+  exit \
+    "${1}"
+}
+
+_globals
+_global_variables
+# shellcheck disable=SC2004
+# shellcheck disable=SC2034
+while \
+  getopts \
+    'e:k:s:b:n:cvh?' \
+    arg; do
+  case \
+    "${arg}" in
+    e) override_user_email="${OPTARG}" ;;
+    k) override_user_password="${OPTARG}" ;;
+    s) override_email_subject="${OPTARG}" ;;
+    b) override_email_body="${OPTARG}" ;;
+    n) override_recipients_per_email="${OPTARG}" ;;
+    c) override_color="y" ;;
+    v) override_quiet="n" ;;
+    h|?) _set_overrides && \
+	 _usage \
+           0 ;;
+    *)
+    _msg_error \
+      "Invalid argument '${arg}'" \
+      0 && \
+    _set_overrides && \
+    _usage \
+      1
+    ;;
+  esac
+done
+shift \
+  $(( \
+    OPTIND - 1 \
+  ))
+(( "$#" < 1 )) && \
+  _msg_error \
+    "No recipients given." \
+    1
+email_recipients=(
+  "$@"
+)
+_set_overrides
+app_opts=(
+  "$(_get \
+       "user" \
+       "email")"
+  "$(_get \
+       "user" \
+       "password")"
+  "$(_get \
+       "email" \
+       "subject")"
+  "$(_get \
+       "email" \
+       "body")"
+  "$(_get \
+       "recipients" \
+       "per_email")"
+  "${email_recipients[@]}"
+)
+_show_config
+_email_bulk_sender \
+  "${app_opts[@]}"
+
+# vim:set sw=2 sts=-1 et:
