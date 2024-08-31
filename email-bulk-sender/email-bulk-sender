@@ -48,6 +48,50 @@ _credentials_requirements() {
   fi
 }
 
+_email_send() {
+  local \
+    _user="${1}" \
+    _password="${2}" \
+    _recipient="${3}" \
+    _subject="${4}" \
+    _body="${5}" \
+    _tmp \
+    _msmtp_opts=()
+  _domain="$( \
+    echo \
+      "${_email}" | \
+      awk \
+        -F \
+          "@" \
+        '{print $2}')"
+  _host="smtp.${_host}"
+  _msmtp_opts=(
+    --auth=on
+    --tls=on 
+    --host "${_host}"
+    --port 587
+    --user "${_user}"
+    --read-envelope-from
+    --read-recipients
+    --passwordeval="${_password}"
+  )
+  _tmp="$( \
+    mktemp \
+      --suffix=".txt")"
+  cat << EOF > ${_tmp}
+From: ${_user}
+To: ${_recipient}
+Subject: ${_subject}
+
+${_body}
+EOF
+  # Send it
+  cat \
+    "${_tmp}" | \
+    msmtp \
+      "${_msmtp_opts[@]}"
+}
+
 _email_bulk_sender() {
   local \
     _email="${1}" \
@@ -55,13 +99,23 @@ _email_bulk_sender() {
     _subject="${3}" \
     _body="${4}" \
     _recipients_per_email="${5}" \
-    _recipients=()
+    _recipients=() \
+    _recipient
   shift \
-    4
+    5
   _recipients=(
     "$@"
   )
   _credentials_requirements
+  for _recipient \
+    in "${_recipients[@]}"; do
+    _email_send \
+      "${_user}" \
+      "${_password}" \
+      "${_recipient}" \
+      "${_subject}" \
+      "${_body}"
+  done
 }
 
 _set_overrides() {
