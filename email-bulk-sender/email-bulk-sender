@@ -13,10 +13,12 @@ _share="${_bin}/../share"
 source \
   "${_lib}/libcrash-bash/crash-bash"
 
-_root_requirements() {
+_requirements() {
   _check_cmd \
-    "display-ppa" \
-    "android-display-utils"
+    "msmtp"
+  _check_cmd \
+    "awk" \
+    "gawk"
 }
 
 # shellcheck disable=SC2034
@@ -24,6 +26,8 @@ _global_variables() {
   send_date=""
   user_email=""
   user_password=""
+  smtp_server=""
+  smtp_port=""
   email_subject=""
   email_body=""
   recipients_per_email=""
@@ -85,27 +89,38 @@ _email_send() {
     _recipient="${3}" \
     _subject="${4}" \
     _body="${5}" \
+    _host="${6}" \
+    _port="${7}" \
     _tmp \
     _msmtp_opts=() \
-    _host \
-    _domain
-  _domain="$( \
-    echo \
-      "${_email}" | \
-      awk \
-        -F \
-          "@" \
-        '{print $2}')"
-  _host="smtp.${_domain}"
-  _msmtp_opts=(
+    _domain \
+    _starttls="off"
+  if [[ "${_port}" == "" ]]; then
+    _port=465
+  fi
+  if [[ "${_host}" == "" ]]; then
+    _domain="$( \
+      echo \
+        "${_user}" | \
+        awk \
+          -F \
+            "@" \
+          '{print $2}')"
+    _host="smtp.${_domain}"
+    if [[ "${_domain}" == "gmail.com" ]]; then
+      _port=587
+    fi
+  fi
+  _msmtp_opts+=(
     --auth=on
-    --tls=on 
     --host "${_host}"
-    --port 587
+    --port "${_port}"
     --user "${_user}"
+    --tls=on 
+    --tls-starttls="${_starttls}"
     --read-envelope-from
     --read-recipients
-    --passwordeval="${_password}"
+    --passwordeval="echo ${_password}"
   )
   _tmp="$( \
     mktemp \
@@ -117,7 +132,8 @@ Subject: ${_subject}
 
 ${_body}
 EOF
-  # Send it
+  _msg_info \
+    "${_user}: sending '${_subject}' to '${_recipient}'"
   cat \
     "${_tmp}" | \
     msmtp \
@@ -128,13 +144,15 @@ _email_bulk_sender() {
   local \
     _email="${1}" \
     _password="${2}" \
-    _subject="${3}" \
-    _body="${4}" \
-    _recipients_per_email="${5}" \
+    _host="${3}" \
+    _port="${4}" \
+    _subject="${5}" \
+    _body="${6}" \
+    _recipients_per_email="${7}" \
     _recipients=() \
     _recipient
   shift \
-    5
+    7
   _recipients=(
     "$@"
   )
@@ -146,7 +164,9 @@ _email_bulk_sender() {
       "${_password}" \
       "${_recipient}" \
       "${_subject}" \
-      "${_body}"
+      "${_body}" \
+      "${_host}" \
+      "${_port}"
   done
 }
 
@@ -163,6 +183,14 @@ _set_overrides() {
     "user" \
     "password" \
     ""
+  _set_override \
+    "smtp" \
+    "server" \
+    ""
+  _set_override \
+    "smtp" \
+    "port" \
+    "465"
   _set_override \
     "email" \
     "subject" \
@@ -206,6 +234,8 @@ _show_config() {
   _msg_info "        Bulk send at date:   $(_get "send" "date")"
   _msg_info "               User email:   $(_get "user" "email")"
   _msg_info "            User password:   $(_get "user" "password")"
+  _msg_info "              SMTP server:   $(_get "smtp" "server")"
+  _msg_info "                SMTP port:   $(_get "smtp" "port")"
   _msg_info "            Email subject:   $(_get "email" "subject")"
   _msg_info "               Email body:   $(_get "email" "body")"
   _msg_info "     Recipients per email:   $(_get "recipients" "per_email")"
@@ -236,6 +266,10 @@ Usage:
                                Default: $(_get "user" "email")
      -k <password>             User password
                                Default: $(_get "user" "password")
+     -H <smtp_server>          SMTP server
+                               Default: $(_get "smtp" "server")
+     -P <smtp_port>            SMTP port
+                               Default: $(_get "smtp" "port")
      -s <subject>              Email subject
                                Default: $(_get "email" "subject")
      -b <body>                 Email body
@@ -254,16 +288,19 @@ ENDUSAGETEXT
 
 _globals
 _global_variables
+_requirements
 # shellcheck disable=SC2004
 # shellcheck disable=SC2034
 while \
   getopts \
-    'e:k:s:b:n:cvh?' \
+    'e:k:H:P:s:b:n:cvh?' \
     arg; do
   case \
     "${arg}" in
     e) override_user_email="${OPTARG}" ;;
     k) override_user_password="${OPTARG}" ;;
+    H) override_smtp_server="${OPTARG}" ;;
+    P) override_smtp_port="${OPTARG}" ;;
     s) override_email_subject="${OPTARG}" ;;
     b) override_email_body="${OPTARG}" ;;
     n) override_recipients_per_email="${OPTARG}" ;;
@@ -301,6 +338,12 @@ app_opts=(
   "$(_get \
        "user" \
        "password")"
+  "$(_get \
+       "smtp" \
+       "server")"
+  "$(_get \
+       "smtp" \
+       "port")"
   "$(_get \
        "email" \
        "subject")"
